@@ -45,10 +45,26 @@ class TableDropper:
 
     def get_tables(self, catalog_schema):
         try:
-            # Unity Catalog expects catalog.schema
-            # We explicitly check for rows to be safe against different return structures
-            df = self.spark.sql(f"SHOW TABLES IN {catalog_schema}")
-            return [row.tableName for row in df.collect()]
+            parts = catalog_schema.split('.')
+            if len(parts) != 2:
+                with self.output:
+                    print(f"Error: Expected 'catalog.schema', got '{catalog_schema}'")
+                return []
+
+            catalog, schema = parts
+
+            # Basic sanitization to prevent SQL injection
+            schema_escaped = schema.replace("'", "\\'")
+
+            # Query information_schema for table name and creation time
+            query = f"""
+                SELECT table_name, created
+                FROM {catalog}.information_schema.tables
+                WHERE table_schema = '{schema_escaped}'
+                ORDER BY created ASC
+            """
+            df = self.spark.sql(query)
+            return [{'name': row.table_name, 'created': row.created} for row in df.collect()]
         except Exception as e:
             with self.output:
                 print(f"Error listing tables: {e}")
@@ -77,7 +93,7 @@ class TableDropper:
             return
 
         self.checkboxes = [
-            widgets.Checkbox(value=False, description=t, indent=False)
+            widgets.Checkbox(value=False, description=f"{t['name']} ({t['created']})", indent=False)
             for t in tables
         ]
 
@@ -98,7 +114,18 @@ class TableDropper:
     def on_drop_click(self, b):
         self.output.clear_output()
         catalog_schema = self.catalog_schema_input.value.strip()
-        selected_tables = [cb.description for cb in self.checkboxes if cb.value]
+
+        # Ensure state is consistent
+        if len(self.checkboxes) != len(self.tables):
+            with self.output:
+                print("Error: UI state inconsistent. Please reload tables.")
+            return
+
+        selected_tables = [
+            table_data['name']
+            for cb, table_data in zip(self.checkboxes, self.tables)
+            if cb.value
+        ]
 
         if not selected_tables:
             with self.output:

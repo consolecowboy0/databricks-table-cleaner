@@ -28,23 +28,39 @@ class TestTableDropper(unittest.TestCase):
         self.app.output.__exit__ = MagicMock()
 
     def test_get_tables(self):
-        # Setup mock return for spark.sql("SHOW TABLES...").collect()
+        # Setup mock return for spark.sql query
         mock_df = MagicMock()
         row1 = MagicMock()
-        row1.tableName = "table1"
+        row1.table_name = "table1"
+        row1.created = "2023-01-01"
         row2 = MagicMock()
-        row2.tableName = "table2"
+        row2.table_name = "table2"
+        row2.created = "2023-01-02"
         mock_df.collect.return_value = [row1, row2]
         self.mock_spark.sql.return_value = mock_df
 
         tables = self.app.get_tables("my_catalog.my_schema")
 
-        self.mock_spark.sql.assert_called_with("SHOW TABLES IN my_catalog.my_schema")
-        self.assertEqual(tables, ["table1", "table2"])
+        # Verify the query was constructed correctly
+        # We clean whitespace for easier comparison or just check key parts
+        actual_query = self.mock_spark.sql.call_args[0][0]
+        self.assertIn("FROM my_catalog.information_schema.tables", actual_query)
+        self.assertIn("WHERE table_schema = 'my_schema'", actual_query)
+        self.assertIn("ORDER BY created ASC", actual_query)
+
+        expected_tables = [
+            {'name': "table1", 'created': "2023-01-01"},
+            {'name': "table2", 'created': "2023-01-02"}
+        ]
+        self.assertEqual(tables, expected_tables)
 
     def test_on_load_click(self):
         # Mock get_tables to return some tables
-        with patch.object(self.app, 'get_tables', return_value=['t1', 't2']) as mock_get_tables:
+        mock_data = [
+            {'name': 't1', 'created': '2023-01-01'},
+            {'name': 't2', 'created': '2023-01-02'}
+        ]
+        with patch.object(self.app, 'get_tables', return_value=mock_data) as mock_get_tables:
             # Reset the mock_widgets.Checkbox calls before this test action
             mock_widgets.Checkbox.reset_mock()
 
@@ -56,13 +72,10 @@ class TestTableDropper(unittest.TestCase):
 
             # Verify Checkbox calls
             # We expect 3 calls: 2 for tables + 1 for "Select All"
-            # Note: The order depends on implementation. In the code:
-            # checkboxes are created first, then select_all.
-
-            # Filter calls to Checkbox that have 'description'='t1' or 't2'
             calls = mock_widgets.Checkbox.call_args_list
-            t1_calls = [c for c in calls if c[1].get('description') == 't1']
-            t2_calls = [c for c in calls if c[1].get('description') == 't2']
+            # Check for descriptions containing date
+            t1_calls = [c for c in calls if c[1].get('description') == 't1 (2023-01-01)']
+            t2_calls = [c for c in calls if c[1].get('description') == 't2 (2023-01-02)']
 
             self.assertEqual(len(t1_calls), 1)
             self.assertEqual(len(t2_calls), 1)
@@ -73,12 +86,17 @@ class TestTableDropper(unittest.TestCase):
 
     def test_drop_dry_run(self):
         # Setup: loaded tables and selected some
+        self.app.tables = [
+            {'name': 't1', 'created': '2023-01-01'},
+            {'name': 't2', 'created': '2023-01-02'}
+        ]
+
         cb1 = MagicMock()
-        cb1.description = "t1"
+        cb1.description = "t1 (2023-01-01)"
         cb1.value = True
 
         cb2 = MagicMock()
-        cb2.description = "t2"
+        cb2.description = "t2 (2023-01-02)"
         cb2.value = False # Not selected
 
         self.app.checkboxes = [cb1, cb2]
@@ -96,12 +114,17 @@ class TestTableDropper(unittest.TestCase):
 
     def test_drop_execution(self):
         # Setup: loaded tables and selected some
+        self.app.tables = [
+            {'name': 't1', 'created': '2023-01-01'},
+            {'name': 't2', 'created': '2023-01-02'}
+        ]
+
         cb1 = MagicMock()
-        cb1.description = "t1"
+        cb1.description = "t1 (2023-01-01)"
         cb1.value = True
 
         cb2 = MagicMock()
-        cb2.description = "t2"
+        cb2.description = "t2 (2023-01-02)"
         cb2.value = True
 
         self.app.checkboxes = [cb1, cb2]
