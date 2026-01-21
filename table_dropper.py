@@ -1,4 +1,10 @@
 # Databricks notebook source
+from typing import Any, Dict, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pyspark.sql import SparkSession
+    import ipywidgets as widgets  # type: ignore
+
 try:
     import ipywidgets as widgets
     from IPython.display import display
@@ -7,45 +13,50 @@ except ImportError:
     # This allows the class definition to be loaded if we mock widgets later or just inspect code.
     pass
 
+
 class TableDropper:
-    def __init__(self, spark_session):
-        self.spark = spark_session
-        self.tables = []
-        self.checkboxes = []
+    def __init__(self, spark_session: "SparkSession") -> None:
+        self.spark: "SparkSession" = spark_session
+        self.tables: List[Dict[str, Any]] = []
+        self.checkboxes: List[Any] = []
 
         # UI Components
         self.catalog_schema_input = widgets.Text(
-            description='Catalog.Schema:',
-            placeholder='main.default',
-            style={'description_width': 'initial'}
+            description="Catalog.Schema:",
+            placeholder="main.default",
+            style={"description_width": "initial"},
         )
         self.load_btn = widgets.Button(description="Load Tables")
         self.load_btn.on_click(self.on_load_click)
 
         self.dry_run_checkbox = widgets.Checkbox(
-            value=True,
-            description='Dry Run (Print only)',
-            indent=False
+            value=True, description="Dry Run (Print only)", indent=False
         )
 
-        self.drop_btn = widgets.Button(description="Drop Selected Tables", button_style='danger')
+        self.drop_btn = widgets.Button(
+            description="Drop Selected Tables", button_style="danger"
+        )
         self.drop_btn.on_click(self.on_drop_click)
         self.drop_btn.disabled = True
 
         self.output = widgets.Output()
         self.table_list_box = widgets.VBox([])
 
-    def display_ui(self):
-        display(widgets.VBox([
-            widgets.HBox([self.catalog_schema_input, self.load_btn]),
-            self.table_list_box,
-            widgets.HBox([self.dry_run_checkbox, self.drop_btn]),
-            self.output
-        ]))
+    def display_ui(self) -> None:
+        display(
+            widgets.VBox(
+                [
+                    widgets.HBox([self.catalog_schema_input, self.load_btn]),
+                    self.table_list_box,
+                    widgets.HBox([self.dry_run_checkbox, self.drop_btn]),
+                    self.output,
+                ]
+            )
+        )
 
-    def get_tables(self, catalog_schema):
+    def get_tables(self, catalog_schema: str) -> List[Dict[str, Any]]:
         try:
-            parts = catalog_schema.split('.')
+            parts = catalog_schema.split(".")
             if len(parts) != 2:
                 with self.output:
                     print(f"Error: Expected 'catalog.schema', got '{catalog_schema}'")
@@ -64,13 +75,15 @@ class TableDropper:
                 ORDER BY created ASC
             """
             df = self.spark.sql(query)
-            return [{'name': row.table_name, 'created': row.created} for row in df.collect()]
+            return [
+                {"name": row.table_name, "created": row.created} for row in df.collect()
+            ]
         except Exception as e:
             with self.output:
                 print(f"Error listing tables: {e}")
             return []
 
-    def on_load_click(self, b):
+    def on_load_click(self, b: Any) -> None:
         self.output.clear_output()
         self.table_list_box.children = []
         self.drop_btn.disabled = True
@@ -93,13 +106,20 @@ class TableDropper:
             return
 
         self.checkboxes = [
-            widgets.Checkbox(value=False, description=f"{t['name']} ({t['created']})", indent=False)
+            widgets.Checkbox(
+                value=False, description=f"{t['name']} ({t['created']})", indent=False
+            )
             for t in tables
         ]
 
         # Create a "Select All" checkbox
-        self.select_all_cb = widgets.Checkbox(value=False, description="Select All", indent=False, style={'font_weight': 'bold'})
-        self.select_all_cb.observe(self.on_select_all_change, names='value')
+        self.select_all_cb = widgets.Checkbox(
+            value=False,
+            description="Select All",
+            indent=False,
+            style={"font_weight": "bold"},
+        )
+        self.select_all_cb.observe(self.on_select_all_change, names="value")
 
         self.table_list_box.children = (self.select_all_cb,) + tuple(self.checkboxes)
         self.drop_btn.disabled = False
@@ -107,11 +127,11 @@ class TableDropper:
         with self.output:
             print(f"Found {len(tables)} tables.")
 
-    def on_select_all_change(self, change):
+    def on_select_all_change(self, change: Dict[str, Any]) -> None:
         for cb in self.checkboxes:
-            cb.value = change['new']
+            cb.value = change["new"]
 
-    def on_drop_click(self, b):
+    def on_drop_click(self, b: Any) -> None:
         self.output.clear_output()
         catalog_schema = self.catalog_schema_input.value.strip()
 
@@ -122,7 +142,7 @@ class TableDropper:
             return
 
         selected_tables = [
-            table_data['name']
+            table_data["name"]
             for cb, table_data in zip(self.checkboxes, self.tables)
             if cb.value
         ]
@@ -154,7 +174,8 @@ class TableDropper:
 
             print("Done.")
 
+
 # Entry point for Databricks execution
-if 'spark' in globals():
-    app = TableDropper(spark)
+if "spark" in globals():
+    app = TableDropper(spark)  # type: ignore
     app.display_ui()
